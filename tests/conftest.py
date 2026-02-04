@@ -1,30 +1,46 @@
 import pytest
-import allure
 
 from src.clients.courier_client import CourierClient
 from src.helpers.random_data import new_courier_payload
+from src.helpers.retry import request_with_retry
+
 
 @pytest.fixture()
 def courier_client():
     return CourierClient()
 
+
 @pytest.fixture()
-def created_courier(courier_client):
-    """Создаёт курьера и удаляет его в teardown (если удалось залогиниться)."""
-    payload = new_courier_payload()
-    with allure.step("Create courier"):
-        create_resp = courier_client.create(payload)
+def courier_payload():
+    return new_courier_payload()
 
-    courier_id = None
-    if create_resp.status_code in (201, 409):
-        with allure.step("Login courier to get id"):
-            login_resp = courier_client.login({"login": payload["login"], "password": payload["password"]})
-        if login_resp.status_code == 200:
-            body = login_resp.json()
-            courier_id = body.get("id")
 
-    yield payload, create_resp, courier_id
+@pytest.fixture()
+def courier_cleanup(courier_client):
+    """Post-conditions: delete couriers created during a test."""
+    creds_list = []
 
-    if courier_id is not None:
-        with allure.step("Delete courier"):
-            courier_client.delete(courier_id)
+    def register(creds: dict):
+        creds_list.append(creds)
+
+    yield register
+
+    for creds in creds_list:
+        try:
+            login_resp = request_with_retry(
+                lambda: courier_client.login({"login": creds.get("login"), "password": creds.get("password")})
+            )
+            if getattr(login_resp, "status_code", None) == 200:
+                courier_id = login_resp.json().get("id")
+                if courier_id:
+                    courier_client.delete(courier_id)
+        except Exception:
+            pass
+
+
+@pytest.fixture()
+def registered_courier(courier_client, courier_payload, courier_cleanup):
+    """Precondition courier for login tests (registration itself is not under test here)."""
+    courier_client.create(courier_payload)
+    courier_cleanup(courier_payload)
+    return courier_payload
