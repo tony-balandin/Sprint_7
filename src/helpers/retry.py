@@ -10,23 +10,31 @@ RETRYABLE_STATUS = {502, 503, 504}
 class ResponseLike:
     status_code: int
     error: Optional[str] = None
+    attempts: int = 1
 
     def json(self):
-        return {"error": self.error} if self.error else {}
+        return {"error": self.error, "attempts": self.attempts}
 
-def request_with_retry(call: Callable[[], object], retries: int = 3, sleep_s: float = 0.7):
+def request_with_retry(
+    call: Callable[[], object],
+    retries: int = 5,
+    sleep_s: float = 0.8,
+):
     last = None
-    for _ in range(retries):
+    for attempt in range(1, retries + 1):
         try:
             last = call()
         except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectTimeout) as e:
-            last = ResponseLike(status_code=504, error=str(e))
+            last = ResponseLike(status_code=504, error=str(e), attempts=attempt)
         except requests.exceptions.RequestException as e:
-            last = ResponseLike(status_code=504, error=str(e))
+            last = ResponseLike(status_code=504, error=str(e), attempts=attempt)
 
         status = getattr(last, "status_code", None)
         if status not in RETRYABLE_STATUS:
             return last
 
         time.sleep(sleep_s)
+
+    if isinstance(last, ResponseLike):
+        last.attempts = retries
     return last

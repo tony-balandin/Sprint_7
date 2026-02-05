@@ -11,13 +11,7 @@ def courier_client():
 
 
 @pytest.fixture()
-def courier_payload():
-    return new_courier_payload()
-
-
-@pytest.fixture()
 def courier_cleanup(courier_client):
-    """Post-conditions: delete couriers created during a test."""
     creds_list = []
 
     def register(creds: dict):
@@ -39,8 +33,8 @@ def courier_cleanup(courier_client):
 
 
 @pytest.fixture()
-def registered_courier(courier_client, courier_payload, courier_cleanup):
-    """Precondition courier for login tests (registration itself is not under test here)."""
-    courier_client.create(courier_payload)
-    courier_cleanup(courier_payload)
-    return courier_payload
+def registered_courier(courier_client, courier_cleanup):
+    payload = new_courier_payload()
+    courier_client.create(payload)
+    courier_cleanup(payload)
+    return payload
